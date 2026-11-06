@@ -1,0 +1,553 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bug Culture – M324 Jon Zimmermann</title>
+  <meta name="description" content="A tiny browser game: software bugs grow on an agar plate. Swab them before the plate is contaminated.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --hood: #dce3e0;      /* fume hood surface */
+      --ink: #1f2a2e;       /* lab marker */
+      --ink-soft: #4a585d;
+      --agar: #d6457a;      /* MacConkey agar */
+      --colony: #f6e7a1;
+      --colony-edge: #a8801c;
+      --glove: #5b4fcf;     /* nitrile glove */
+      --glass: #f7faf9;
+      --step: 1.25;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { font-size: 100%; }
+
+    body {
+      margin: 0;
+      background: var(--hood);
+      color: var(--ink);
+      font-family: "Bricolage Grotesque", system-ui, sans-serif;
+      font-size: 1.0625rem;
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .bench {
+      max-width: 72rem;
+      margin: 0 auto;
+      padding: 2.5rem 1.5rem 3rem;
+      display: grid;
+      grid-template-columns: minmax(16rem, 22rem) 1fr;
+      gap: 2.5rem 3.5rem;
+      align-items: start;
+    }
+
+    .intro h1 {
+      font-size: clamp(2.6rem, 6vw, 4.4rem);
+      font-weight: 800;
+      font-variation-settings: "opsz" 96;
+      line-height: 0.95;
+      letter-spacing: -0.03em;
+      margin: 0 0 1.25rem;
+    }
+
+    .intro p {
+      margin: 0 0 1rem;
+      max-width: 34ch;
+      color: var(--ink-soft);
+    }
+
+    .readout {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.25rem 1.5rem;
+      margin: 1.75rem 0 1.5rem;
+    }
+
+    .readout dt {
+      font-size: 0.875rem;
+      color: var(--ink-soft);
+    }
+
+    .readout dd {
+      margin: 0 0 0.5rem;
+      font-size: 2rem;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.1;
+    }
+
+    .meter {
+      grid-column: 1 / -1;
+      height: 0.6rem;
+      border-radius: 1rem;
+      background: rgba(31, 42, 46, 0.12);
+      overflow: hidden;
+    }
+
+    .meter span {
+      display: block;
+      height: 100%;
+      width: 0%;
+      background: var(--agar);
+      transition: width 120ms linear;
+    }
+
+    .meter-label {
+      grid-column: 1 / -1;
+      font-size: 0.875rem;
+      color: var(--ink-soft);
+      margin-top: 0.35rem;
+    }
+
+    button {
+      font: inherit;
+      font-weight: 600;
+      font-size: 1.0625rem;
+      padding: 0.8rem 1.6rem;
+      border: 0;
+      border-radius: 999px;
+      background: var(--glove);
+      color: #fff;
+      cursor: pointer;
+    }
+
+    button:hover { background: #4a3fb8; }
+
+    :focus-visible {
+      outline: 3px solid var(--glove);
+      outline-offset: 3px;
+    }
+
+    .keys {
+      margin-top: 1.25rem;
+      font-size: 0.9375rem;
+      color: var(--ink-soft);
+    }
+
+    kbd {
+      font: inherit;
+      font-size: 0.875rem;
+      padding: 0.05rem 0.4rem;
+      border: 1px solid rgba(31, 42, 46, 0.3);
+      border-bottom-width: 2px;
+      border-radius: 0.3rem;
+      background: var(--glass);
+    }
+
+    .plate-wrap {
+      position: relative;
+      aspect-ratio: 1;
+      width: 100%;
+      max-width: 40rem;
+      justify-self: center;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      touch-action: manipulation;
+      border-radius: 50%;
+    }
+
+    canvas:focus-visible { outline-offset: 6px; }
+
+    .verdict {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-content: center;
+      text-align: center;
+      pointer-events: none;
+      padding: 18%;
+    }
+
+    .verdict strong {
+      display: block;
+      font-size: clamp(1.6rem, 4vw, 2.6rem);
+      font-weight: 800;
+      line-height: 1.05;
+      color: var(--glass);
+      text-shadow: 0 2px 0 rgba(31, 42, 46, 0.35);
+    }
+
+    .verdict span {
+      display: block;
+      margin-top: 0.6rem;
+      color: var(--glass);
+      font-size: 1.0625rem;
+    }
+
+    .verdict[hidden] { display: none; }
+
+    .notes {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+      gap: 2rem 3.5rem;
+      padding-top: 2.5rem;
+      border-top: 2px solid rgba(31, 42, 46, 0.15);
+    }
+
+    .notes h2 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      line-height: 1.2;
+      margin: 0 0 0.6rem;
+    }
+
+    .notes p {
+      margin: 0;
+      max-width: 60ch;
+    }
+
+    footer {
+      grid-column: 1 / -1;
+      font-size: 0.875rem;
+      color: var(--ink-soft);
+    }
+
+    @media (max-width: 52rem) {
+      .bench {
+        grid-template-columns: 1fr;
+        padding-top: 1.75rem;
+        gap: 1.75rem;
+      }
+      .intro p { max-width: 46ch; }
+      .readout { margin: 1.25rem 0 1rem; }
+    }
+  </style>
+</head>
+<body>
+  <main class="bench">
+    <section class="intro" aria-labelledby="title">
+      <h1 id="title">Bug Culture</h1>
+      <p>Somebody left the plate open overnight. Software bugs are growing on the agar, and every colony that matures spreads a new one next to it.</p>
+      <p>Swab them before fourteen colonies are on the plate. Small ones are worth double.</p>
+
+      <dl class="readout">
+        <div><dt>Swabbed</dt><dd id="score">0</dd></div>
+        <div><dt>Best</dt><dd id="best">0</dd></div>
+        <div class="meter" aria-hidden="true"><span id="meter"></span></div>
+        <div class="meter-label" id="meter-label">Plate is clean</div>
+      </dl>
+
+      <button id="start" type="button">Start culture</button>
+      <p class="keys">Click or tap a colony to swab it. Keyboard: focus the plate, move with <kbd>←</kbd> <kbd>↑</kbd> <kbd>→</kbd> <kbd>↓</kbd>, swab with <kbd>Space</kbd>.</p>
+    </section>
+
+    <div class="plate-wrap">
+      <canvas id="plate" tabindex="0" aria-label="Agar plate with growing bug colonies"></canvas>
+      <div class="verdict" id="verdict">
+        <strong id="verdict-title">Sterile plate</strong>
+        <span id="verdict-text">Press start to incubate.</span>
+      </div>
+    </div>
+
+    <section class="notes" aria-label="About this page">
+      <div>
+        <h2>What this is</h2>
+        <p>A small browser game for module M324 (DevOps practices) at GIBZ. It is one HTML file without a build step. GitHub Actions publishes it to GitHub Pages every time a new version tag is pushed.</p>
+      </div>
+      <div>
+        <h2>Why bugs on a plate</h2>
+        <p>I am doing my apprenticeship as an Informatiker EFZ at Roche, where the labs grow real cultures and we grow software. Both multiply when nobody is watching, and both are cheapest to remove early.</p>
+      </div>
+    </section>
+
+    <footer>
+      Module M324 by Jon Zimmermann, version <span id="version">{{VERSION}}</span>
+    </footer>
+  </main>
+
+  <div id="announce" class="visually-hidden" aria-live="polite" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);"></div>
+
+  <script>
+  (() => {
+    const LIMIT = 14;
+    const NAMES = [
+      "null ref", "off-by-one", "race cond.", "flaky test", "merge conflict",
+      "memory leak", "typo", "timezone", "CORS", "N+1 query", "undefined",
+      "404", "stale cache", "deadlock", "NaN", "encoding"
+    ];
+
+    const canvas = document.getElementById("plate");
+    const ctx = canvas.getContext("2d");
+    const el = (id) => document.getElementById(id);
+    const scoreEl = el("score"), bestEl = el("best"), meterEl = el("meter");
+    const meterLabel = el("meter-label"), startBtn = el("start");
+    const verdict = el("verdict"), vTitle = el("verdict-title"), vText = el("verdict-text");
+    const announce = el("announce");
+
+    const versionEl = el("version");
+    if (versionEl.textContent.includes("{{")) versionEl.textContent = "local build";
+
+    let W = 0, H = 0, R = 0, cx = 0, cy = 0, dpr = 1;
+    let colonies = [], swabs = [];
+    let state = "idle", score = 0, elapsed = 0, spawnTimer = 0, last = 0;
+    let best = Number(localStorage.getItem("bug-culture-best") || 0);
+    const cursor = { x: 0, y: 0, visible: false };
+    const held = new Set();
+
+    bestEl.textContent = best;
+
+    function resize() {
+      const rect = canvas.getBoundingClientRect();
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const oldR = R || 1, oldCx = cx, oldCy = cy;
+      W = rect.width; H = rect.height;
+      canvas.width = Math.round(W * dpr);
+      canvas.height = Math.round(H * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      cx = W / 2; cy = H / 2; R = Math.min(W, H) / 2 - 10;
+      const k = R / oldR;
+      for (const c of colonies) {
+        c.x = cx + (c.x - oldCx) * k; c.y = cy + (c.y - oldCy) * k;
+        c.r *= k; c.max *= k;
+      }
+      if (!cursor.visible) { cursor.x = cx; cursor.y = cy; }
+      draw();
+    }
+
+    function rand(a, b) { return a + Math.random() * (b - a); }
+
+    function spawn(nearX, nearY) {
+      const inner = R * 0.86;
+      let x, y, tries = 0;
+      do {
+        if (nearX !== undefined && tries < 12) {
+          const a = rand(0, Math.PI * 2), d = rand(R * 0.12, R * 0.22);
+          x = nearX + Math.cos(a) * d; y = nearY + Math.sin(a) * d;
+        } else {
+          const a = rand(0, Math.PI * 2), d = Math.sqrt(Math.random()) * inner;
+          x = cx + Math.cos(a) * d; y = cy + Math.sin(a) * d;
+        }
+        tries++;
+      } while (Math.hypot(x - cx, y - cy) > inner && tries < 30);
+
+      colonies.push({
+        x, y,
+        r: R * 0.015,
+        max: R * rand(0.09, 0.13),
+        grow: R * rand(0.018, 0.03) * (1 + elapsed / 60),
+        name: NAMES[Math.floor(Math.random() * NAMES.length)],
+        seed: Math.random() * 10,
+        spread: false
+      });
+    }
+
+    function swabAt(x, y) {
+      if (state !== "running") return;
+      let hit = -1, bestD = Infinity;
+      colonies.forEach((c, i) => {
+        const d = Math.hypot(c.x - x, c.y - y);
+        if (d < c.r + 8 && d < bestD) { bestD = d; hit = i; }
+      });
+      swabs.push({ x, y, t: 0, hit: hit >= 0 });
+      if (hit < 0) return;
+      const c = colonies[hit];
+      score += c.r < c.max * 0.45 ? 2 : 1;
+      colonies.splice(hit, 1);
+      scoreEl.textContent = score;
+      updateMeter();
+    }
+
+    function updateMeter() {
+      const n = colonies.length;
+      meterEl.style.width = Math.min(100, (n / LIMIT) * 100) + "%";
+      meterLabel.textContent = n === 0 ? "Plate is clean" : `${n} of ${LIMIT} colonies`;
+    }
+
+    function start() {
+      colonies = []; swabs = [];
+      score = 0; elapsed = 0; spawnTimer = 0;
+      scoreEl.textContent = 0;
+      verdict.hidden = true;
+      state = "running";
+      startBtn.textContent = "Restart culture";
+      spawn(); spawn();
+      updateMeter();
+      last = performance.now();
+      canvas.focus({ preventScroll: true });
+      requestAnimationFrame(loop);
+    }
+
+    function end() {
+      state = "over";
+      if (score > best) {
+        best = score;
+        localStorage.setItem("bug-culture-best", best);
+        bestEl.textContent = best;
+      }
+      const secs = Math.round(elapsed);
+      vTitle.textContent = "Plate contaminated";
+      vText.textContent = `${score} swabbed in ${secs} s. Start a new culture to try again.`;
+      verdict.hidden = false;
+      announce.textContent = `Plate contaminated. You swabbed ${score} bugs in ${secs} seconds.`;
+      startBtn.focus({ preventScroll: true });
+    }
+
+    function step(dt) {
+      elapsed += dt;
+      const interval = Math.max(0.42, 1.5 - elapsed * 0.022);
+      spawnTimer += dt;
+      if (spawnTimer >= interval) { spawnTimer = 0; spawn(); }
+
+      for (const c of colonies.slice()) {
+        if (c.r < c.max) {
+          c.r = Math.min(c.max, c.r + c.grow * dt);
+        } else if (!c.spread) {
+          c.spread = true;
+          spawn(c.x, c.y);
+        }
+      }
+
+      if (held.size) {
+        const v = R * 0.9 * dt;
+        if (held.has("ArrowLeft")) cursor.x -= v;
+        if (held.has("ArrowRight")) cursor.x += v;
+        if (held.has("ArrowUp")) cursor.y -= v;
+        if (held.has("ArrowDown")) cursor.y += v;
+        const d = Math.hypot(cursor.x - cx, cursor.y - cy);
+        if (d > R) {
+          cursor.x = cx + (cursor.x - cx) * (R / d);
+          cursor.y = cy + (cursor.y - cy) * (R / d);
+        }
+      }
+
+      swabs.forEach((s) => (s.t += dt));
+      swabs = swabs.filter((s) => s.t < 0.35);
+
+      updateMeter();
+      if (colonies.length >= LIMIT) end();
+    }
+
+    function drawColony(c) {
+      const wobble = 6, pts = 18;
+      ctx.beginPath();
+      for (let i = 0; i <= pts; i++) {
+        const a = (i / pts) * Math.PI * 2;
+        const k = 1 + Math.sin(a * 3 + c.seed) * 0.06 + Math.sin(a * 5 + c.seed * 2) * 0.04;
+        const r = c.r * k;
+        const x = c.x + Math.cos(a) * r, y = c.y + Math.sin(a) * r;
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      const ripe = c.r >= c.max;
+      ctx.fillStyle = ripe ? "#fff3b8" : "#f6e7a1";
+      ctx.fill();
+      ctx.lineWidth = ripe ? 2.5 : 1.5;
+      ctx.strokeStyle = "#a8801c";
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(c.x - c.r * 0.25, c.y - c.r * 0.25, c.r * 0.28, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,255,255,0.45)";
+      ctx.fill();
+
+      if (c.r > R * 0.07) {
+        const size = Math.max(10, Math.min(14, c.r * 0.32));
+        ctx.font = `600 ${size}px "Bricolage Grotesque", system-ui, sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillStyle = "#5c4508";
+        ctx.fillText(c.name, c.x, c.y + c.r * 0.15, c.r * 1.8);
+      }
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, W, H);
+
+      // glass rim
+      ctx.beginPath();
+      ctx.arc(cx, cy, R + 8, 0, Math.PI * 2);
+      ctx.fillStyle = "#f7faf9";
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "rgba(31,42,46,0.18)";
+      ctx.stroke();
+
+      // agar
+      const g = ctx.createRadialGradient(cx - R * 0.3, cy - R * 0.35, R * 0.1, cx, cy, R);
+      g.addColorStop(0, "#e2648f");
+      g.addColorStop(1, "#c7386c");
+      ctx.beginPath();
+      ctx.arc(cx, cy, R, 0, Math.PI * 2);
+      ctx.fillStyle = g;
+      ctx.fill();
+
+      // reflection on the lid
+      ctx.beginPath();
+      ctx.arc(cx, cy, R * 0.92, Math.PI * 1.08, Math.PI * 1.42);
+      ctx.lineWidth = R * 0.035;
+      ctx.lineCap = "round";
+      ctx.strokeStyle = "rgba(255,255,255,0.28)";
+      ctx.stroke();
+      ctx.lineCap = "butt";
+
+      for (const c of colonies) drawColony(c);
+
+      for (const s of swabs) {
+        const p = s.t / 0.35;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, 10 + p * 26, 0, Math.PI * 2);
+        ctx.lineWidth = 3 * (1 - p);
+        ctx.strokeStyle = s.hit ? "rgba(255,255,255,0.9)" : "rgba(31,42,46,0.5)";
+        ctx.stroke();
+      }
+
+      if (cursor.visible && state === "running") {
+        ctx.beginPath();
+        ctx.arc(cursor.x, cursor.y, 14, 0, Math.PI * 2);
+        ctx.moveTo(cursor.x - 22, cursor.y); ctx.lineTo(cursor.x - 8, cursor.y);
+        ctx.moveTo(cursor.x + 8, cursor.y); ctx.lineTo(cursor.x + 22, cursor.y);
+        ctx.moveTo(cursor.x, cursor.y - 22); ctx.lineTo(cursor.x, cursor.y - 8);
+        ctx.moveTo(cursor.x, cursor.y + 8); ctx.lineTo(cursor.x, cursor.y + 22);
+        ctx.lineWidth = 2.5;
+        ctx.strokeStyle = "#5b4fcf";
+        ctx.stroke();
+      }
+    }
+
+    function loop(now) {
+      if (state !== "running") { draw(); return; }
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      step(dt);
+      draw();
+      if (state === "running") requestAnimationFrame(loop);
+    }
+
+    canvas.addEventListener("pointerdown", (e) => {
+      const rect = canvas.getBoundingClientRect();
+      cursor.visible = false;
+      swabAt(e.clientX - rect.left, e.clientY - rect.top);
+    });
+
+    canvas.addEventListener("keydown", (e) => {
+      if (e.key.startsWith("Arrow")) {
+        e.preventDefault();
+        cursor.visible = true;
+        held.add(e.key);
+      } else if (e.key === " " || e.key === "Enter") {
+        e.preventDefault();
+        if (state !== "running") { start(); return; }
+        cursor.visible = true;
+        swabAt(cursor.x, cursor.y);
+      }
+    });
+    canvas.addEventListener("keyup", (e) => held.delete(e.key));
+    canvas.addEventListener("blur", () => held.clear());
+
+    startBtn.addEventListener("click", start);
+    window.addEventListener("resize", resize);
+    if (document.fonts) document.fonts.ready.then(draw);
+    resize();
+  })();
+  </script>
+</body>
+</html>
